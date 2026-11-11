@@ -1,7 +1,7 @@
 #!/bin/bash
 # 組み立てた UsageBar.app が、通信しない・読み取り範囲が狭いという性質を保っているかを確かめる。
 #
-#   scripts/verify-security.sh [--skip-runtime] [path/to/UsageBar.app]
+#   scripts/verify-security.sh [--skip-runtime] [path/to/UsageBar.app]（省略時は build.noindex/UsageBar.app）
 #   scripts/verify-security.sh --binary path/to/executable   実行ファイル 1 つに 3〜5 だけを行う
 #                                                            （検査が通信するプログラムを NG にできるかの確認用）
 #
@@ -34,7 +34,7 @@ done
 if [[ -n "$SINGLE_BINARY" ]]; then
   [[ -f "$SINGLE_BINARY" ]] || { echo "実行ファイルが見つかりません: $SINGLE_BINARY"; exit 2; }
 fi
-APP="${APP:-$(cd "$(dirname "$0")/.." && pwd)/build/UsageBar.app}"
+APP="${APP:-$(cd "$(dirname "$0")/.." && pwd)/build.noindex/UsageBar.app}"
 failures=0
 if [[ -n "$SINGLE_BINARY" ]]; then
   BINARIES=("$SINGLE_BINARY")

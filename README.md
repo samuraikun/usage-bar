@@ -47,7 +47,7 @@ Claude Code と Codex CLI の使用状況を、Mac のメニューバーに表�
 - 読み込んでから書き込むまでの間にファイルが変わったら、書かずに止める
 - シンボリックリンクならリンク先を書き換える。元の権限も保つ
 - 自分が登録した形（`usagebar-bridge` の絶対パスだけ）以外の `statusLine` には触れない。`my.sh | usagebar-bridge` のように自分で組み立てたコマンドは、上書きも削除もしない
-- ビルド用のフォルダ（`.build/`、`build/`）にある `usagebar-bridge` は登録しない。次のビルドで消えるため
+- ビルド用のフォルダ（`.build/`、`build.noindex/`）にある `usagebar-bridge` は登録しない。次のビルドで消えるため
 
 **依存を増やさない。** 外部パッケージは使わず、Apple のフレームワークだけで作っています。自動アップデートや利用状況の送信もありません。
 
@@ -55,7 +55,7 @@ Claude Code と Codex CLI の使用状況を、Mac のメニューバーに表�
 
 ```bash
 scripts/verify-security.sh ~/Applications/UsageBar.app       # 起動中のアプリを検査
-scripts/verify-security.sh --skip-runtime build/UsageBar.app  # 起動していないアプリを検査（6 を省く）
+scripts/verify-security.sh --skip-runtime build.noindex/UsageBar.app  # 起動していないアプリを検査（6 を省く）
 scripts/verify-security.sh --binary /usr/bin/nc               # 実行ファイル 1 つに 3〜5 だけを行う（検査が NG を出せるかの確認用）
 ```
 
@@ -78,6 +78,8 @@ Xcode（Command Line Tools ではなく Xcode 本体）が必要です。
 scripts/build-app.sh --install      # ~/Applications/UsageBar.app に配置
 open ~/Applications/UsageBar.app
 ```
+
+`~/Applications` に置くと、Raycast や Spotlight で「UsageBar」と打てば出てきます。組み立て途中のアプリは `build.noindex/` に作ります。`.noindex` の付いたフォルダは Spotlight が索引しないので、検索に出るのは配置したアプリだけです。
 
 ad-hoc 署名でローカル用に署名します。Apple の公証には出していません（何も送信しません）。
 
@@ -114,7 +116,7 @@ Claude Code の利用上限は、Claude.ai のサブスクリプション（Pro 
 swift test                                         # 単体テスト
 swift build --product UsageBar && \
   "$(swift build --show-bin-path)/UsageBar" --render-preview /tmp/usagebar   # 画面を PNG に書き出す（サンドボックス外のデバッグビルドで）
-build/UsageBar.app/Contents/MacOS/UsageBar --print-summary                   # サンドボックスの中で集計結果を表示
+build.noindex/UsageBar.app/Contents/MacOS/UsageBar --print-summary                   # サンドボックスの中で集計結果を表示
 /usr/bin/log show --last 10m --predicate 'subsystem == "local.usagebar"'     # 使用率が更新された記録（数値だけ）
 ```
 
@@ -124,4 +126,4 @@ build/UsageBar.app/Contents/MacOS/UsageBar --print-summary                   # �
 | `Sources/UsageBar` | メニューバーのアプリ（SwiftUI の `MenuBarExtra`） |
 | `Sources/UsageBarBridge` | Claude Code のステータスライン用の中継コマンド |
 | `Resources` | Info.plist と entitlements |
-| `scripts` | 組み立てとセキュリティの検査 |
+| `scripts` | 組み立て、セキュリティの検査、アイコンの生成（`swift scripts/make-icon.swift Resources/AppIcon.icns`） |

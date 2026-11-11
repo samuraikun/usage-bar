@@ -207,7 +207,7 @@ func isOurStatusLine(_ value: Any?) -> Bool {
 func install(force: Bool) throws {
     let path = UsagePaths.claudeSettings
     let executable = ownExecutablePath()
-    if !force, executable.contains("/.build/") || executable.contains("/build/UsageBar.app/") {
+    if !force, executable.contains("/.build/") || executable.contains("/build.noindex/") {
         throw InstallError.temporaryLocation(executable)
     }
     var settings: [String: Any]

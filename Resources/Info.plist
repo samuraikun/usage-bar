@@ -6,6 +6,8 @@
 	<string>ja</string>
 	<key>CFBundleExecutable</key>
 	<string>UsageBar</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>local.usagebar.UsageBar</string>
 	<key>CFBundleInfoDictionaryVersion</key>

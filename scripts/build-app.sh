@@ -1,13 +1,15 @@
 #!/bin/bash
 # UsageBar.app を組み立てて、ローカル用に署名する（ad-hoc 署名。Apple には何も送らない）。
 #
-#   scripts/build-app.sh            build/UsageBar.app を作る
+#   scripts/build-app.sh            build.noindex/UsageBar.app を作る
+#                                   （.noindex の付いたフォルダは Spotlight に索引されない。
+#                                     Raycast や Spotlight の検索に、配置したアプリだけが出るようにするため）
 #   scripts/build-app.sh --install  さらに ~/Applications/UsageBar.app へ配置する
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-APP="$ROOT/build/UsageBar.app"
+APP="$ROOT/build.noindex/UsageBar.app"
 INSTALL_DIR="$HOME/Applications"
 
 swift build -c release --product UsageBar
@@ -17,6 +19,7 @@ BIN="$(swift build -c release --show-bin-path)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$BIN/UsageBar" "$APP/Contents/MacOS/UsageBar"
 cp "$BIN/usagebar-bridge" "$APP/Contents/MacOS/usagebar-bridge"
 chmod 755 "$APP/Contents/MacOS/UsageBar" "$APP/Contents/MacOS/usagebar-bridge"
@@ -43,5 +46,9 @@ if [[ "${1:-}" == "--install" ]]; then
   fi
   rm -rf "$INSTALL_DIR/UsageBar.app"
   ditto "$APP" "$INSTALL_DIR/UsageBar.app"
+  # Finder・Raycast・Spotlight に新しいアイコンと情報を読み直させる。
+  touch "$INSTALL_DIR/UsageBar.app"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$INSTALL_DIR/UsageBar.app"
+  mdimport "$INSTALL_DIR/UsageBar.app" 2>/dev/null || true
   echo "installed: $INSTALL_DIR/UsageBar.app"
 fi
