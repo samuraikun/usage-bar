@@ -177,3 +177,13 @@ swift scripts/make-icon.swift Resources/AppIcon.icns            # redraw the app
 | `Sources/UsageBarBridge` | The status line helper for Claude Code |
 | `Resources` | `Info.plist`, entitlements, app icon |
 | `scripts` | Build, security checks, icon generation |
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for what UsageBar protects, its known limits, and how to report a vulnerability privately.
+
+## License
+
+[MIT](LICENSE)
+
+UsageBar is an independent project. It is not affiliated with, endorsed by, or sponsored by Anthropic or OpenAI. Claude, Claude Code, Codex and ChatGPT are trademarks of their respective owners and are used here only to describe compatibility.

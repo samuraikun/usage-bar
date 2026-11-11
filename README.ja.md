@@ -187,3 +187,13 @@ swift scripts/make-icon.swift Resources/AppIcon.icns            # アプリの�
 | `Sources/UsageBarBridge` | Claude Code のステータスライン用の中継コマンド |
 | `Resources` | `Info.plist`、権限の定義（entitlements）、アプリのアイコン |
 | `scripts` | 組み立て、セキュリティの検査、アイコンの生成 |
+
+## セキュリティ
+
+守っていること、既知の制約、脆弱性を非公開で報告する方法は [SECURITY.md](SECURITY.md) にまとめています。
+
+## ライセンス
+
+[MIT](LICENSE)
+
+UsageBar は個人のプロジェクトで、Anthropic とも OpenAI とも関係がなく、承認や支援も受けていません。Claude、Claude Code、Codex、ChatGPT は各社の商標で、ここでは対応している対象を示すためだけに使っています。
