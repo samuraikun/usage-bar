@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  UsageBar の権限。ここに書いたもの以外は App Sandbox が拒否する。
+
+  - com.apple.security.network.client / network.server は付けない。
+    付けなければ、アプリからの通信（DNS を含む）は OS が遮断する。
+  - ファイルは次のディレクトリだけを読み取り専用で許可する。
+    ~/.codex/auth.json や Keychain など、認証情報のある場所は含めない。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
+	<array>
+		<string>/.claude/projects/</string>
+		<string>/.claude/usagebar/</string>
+		<string>/.codex/sessions/</string>
+		<string>/.codex/archived_sessions/</string>
+	</array>
+</dict>
+</plist>
