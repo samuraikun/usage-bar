@@ -8,6 +8,7 @@ struct MenuBarLabel: View {
     let claudePercent: Double?
     let codexPercent: Double?
     let showPercent: Bool
+    var language: AppLanguage = .fromSystem()
 
     var body: some View {
         HStack(spacing: 4) {
@@ -18,7 +19,7 @@ struct MenuBarLabel: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Claude \(text(claudePercent))、Codex \(text(codexPercent))")
+        .accessibilityLabel(Strings(language: language).menuBarAccessibility(claude: text(claudePercent), codex: text(codexPercent)))
     }
 
     private func text(_ percent: Double?) -> String {

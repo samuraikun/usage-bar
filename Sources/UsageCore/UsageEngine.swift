@@ -198,7 +198,7 @@ public actor UsageEngine {
             trackedFiles: claudeCursors.count
         )
         if claudeSnapshot == nil {
-            claudeSummary.notes.append("使用率は Claude Code のステータスライン連携（usagebar-bridge）から受け取ります。")
+            claudeSummary.notes.append(.claudeBridgeNotConfigured)
         }
 
         let codexEvents = codexFiles.values.flatMap(\.events)
@@ -217,7 +217,7 @@ public actor UsageEngine {
             trackedFiles: codexFiles.count
         )
         if codexCompressedFiles > 0 {
-            codexSummary.notes.append("圧縮済み（.zst）の古いログ \(codexCompressedFiles) 件はトークン数の集計に含めていません。")
+            codexSummary.notes.append(.compressedLogsSkipped(codexCompressedFiles))
         }
 
         return UsageSummary(claude: claudeSummary, codex: codexSummary, generatedAt: now)

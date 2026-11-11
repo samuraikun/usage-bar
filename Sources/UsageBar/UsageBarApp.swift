@@ -35,7 +35,8 @@ struct UsageBarApp: App {
             MenuBarLabel(
                 claudePercent: store.menuBarPercent(for: .claude),
                 codexPercent: store.menuBarPercent(for: .codex),
-                showPercent: store.showPercentInMenuBar
+                showPercent: store.showPercentInMenuBar,
+                language: store.language
             )
         }
         .menuBarExtraStyle(.window)
@@ -55,13 +56,13 @@ enum DiagnosticSummary {
             for provider in [summary.claude, summary.codex] {
                 print("[\(provider.provider.displayName)] files=\(provider.trackedFiles)")
                 if let limits = provider.rateLimits {
-                    print("  rate limits observed \(Format.ago(limits.observedAt, now: summary.generatedAt)) plan=\(limits.planType ?? "-")")
+                    print("  rate limits observed \(Format.ago(limits.observedAt, now: summary.generatedAt, language: .en)) plan=\(limits.planType ?? "-")")
                     for window in limits.windows {
-                        let reset = window.resetsAt.map { Format.remaining(until: $0, now: summary.generatedAt) } ?? "-"
-                        print("  \(window.label): \(Format.percent(window.currentPercent(at: summary.generatedAt))) (\(reset))")
+                        let reset = window.resetsAt.map { Format.remaining(until: $0, now: summary.generatedAt, language: .en) } ?? "-"
+                        print("  \(window.label(in: .en)): \(Format.percent(window.currentPercent(at: summary.generatedAt))) (\(reset))")
                     }
                 } else {
-                    print("  rate limits: なし")
+                    print("  rate limits: none")
                 }
                 print("  today total=\(Format.tokens(provider.today.total)) in=\(Format.tokens(provider.today.input)) out=\(Format.tokens(provider.today.output)) cacheRead=\(Format.tokens(provider.today.cacheRead)) cacheWrite=\(Format.tokens(provider.today.cacheWrite))")
                 print("  last5h total=\(Format.tokens(provider.rolling5Hours.total))")
@@ -69,7 +70,7 @@ enum DiagnosticSummary {
                 for model in provider.todayByModel.prefix(3) {
                     print("  model \(model.model): \(Format.tokens(model.tokens.total))")
                 }
-                for note in provider.notes { print("  note: \(note)") }
+                for note in provider.notes { print("  note: \(Strings(language: .en).note(note))") }
             }
             print(String(format: "scan took %.2fs", elapsed))
             semaphore.signal()

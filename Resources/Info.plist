@@ -3,7 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>ja</string>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>UsageBar</string>
 	<key>CFBundleExecutable</key>
 	<string>UsageBar</string>
 	<key>CFBundleIconFile</key>
@@ -12,9 +14,12 @@
 	<string>local.usagebar.UsageBar</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>ja</string>
+	</array>
 	<key>CFBundleName</key>
-	<string>UsageBar</string>
-	<key>CFBundleDisplayName</key>
 	<string>UsageBar</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
@@ -22,12 +27,12 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.developer-tools</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Local build. No network access.</string>
 </dict>

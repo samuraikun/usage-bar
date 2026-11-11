@@ -87,19 +87,21 @@ public struct RateWindow: Sendable, Equatable, Identifiable {
         isExpired(at: now) ? 0 : usedPercent
     }
 
-    public var label: String {
+    /// 枠の名前（「5時間枠」「Weekly」など）。
+    public func label(in language: AppLanguage) -> String {
+        let ja = language == .ja
         switch windowMinutes {
-        case 300?: return "5時間枠"
-        case 10080?: return "週間枠"
-        case 1440?: return "1日枠"
-        case let minutes? where minutes % 1440 == 0: return "\(minutes / 1440)日枠"
-        case let minutes? where minutes % 60 == 0: return "\(minutes / 60)時間枠"
-        case let minutes?: return "\(minutes)分枠"
+        case 300?: return ja ? "5時間枠" : "5-hour"
+        case 10080?: return ja ? "週間枠" : "Weekly"
+        case 1440?: return ja ? "1日枠" : "Daily"
+        case let minutes? where minutes % 1440 == 0: return ja ? "\(minutes / 1440)日枠" : "\(minutes / 1440)-day"
+        case let minutes? where minutes % 60 == 0: return ja ? "\(minutes / 60)時間枠" : "\(minutes / 60)-hour"
+        case let minutes?: return ja ? "\(minutes)分枠" : "\(minutes)-minute"
         case nil:
             switch id {
-            case "five_hour": return "5時間枠"
-            case "seven_day": return "週間枠"
-            case "spend_limit": return "利用額の上限"
+            case "five_hour": return ja ? "5時間枠" : "5-hour"
+            case "seven_day": return ja ? "週間枠" : "Weekly"
+            case "spend_limit": return ja ? "利用額の上限" : "Spend limit"
             default: return id
             }
         }
@@ -168,7 +170,7 @@ public struct ProviderSummary: Sendable, Equatable {
     public var lastActivity: Date?
     public var trackedFiles: Int
     /// 読めなかった・集計対象外にしたファイルの件数など、利用者に知らせる補足。
-    public var notes: [String]
+    public var notes: [ProviderNote]
 
     public init(
         provider: Provider,
@@ -179,7 +181,7 @@ public struct ProviderSummary: Sendable, Equatable {
         todayByModel: [ModelTokens] = [],
         lastActivity: Date? = nil,
         trackedFiles: Int = 0,
-        notes: [String] = []
+        notes: [ProviderNote] = []
     ) {
         self.provider = provider
         self.rateLimits = rateLimits

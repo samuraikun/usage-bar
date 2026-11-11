@@ -12,6 +12,13 @@ import UsageCore
 
 let maxStdinBytes = 4 << 20
 
+/// 中継コマンドはアプリの外で動き、アプリで選んだ言語の設定は読めないため、Mac の言語設定に従う。
+let language = AppLanguage.fromSystem()
+
+func tr(_ ja: String, _ en: String) -> String {
+    language == .ja ? ja : en
+}
+
 /// 上限を超える入力は丸ごと捨てる（ファイルをリダイレクトされても上限までしか読まない）。
 func readStdin(limit: Int) -> Data {
     var data = Data()
@@ -105,24 +112,38 @@ enum InstallError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .settingsUnreadable(let detail): return "settings.json を JSON として読めませんでした: \(detail)"
+        case .settingsUnreadable(let detail):
+            return tr("settings.json を JSON として読めませんでした: \(detail)",
+                      "Could not read settings.json as JSON: \(detail)")
         case .existingStatusLine(let command):
-            return """
+            return tr("""
             すでに別の statusLine が設定されています:
               \(command)
             上書きしてよければ `usagebar-bridge install --force` を実行してください（元の設定はバックアップに残します）。
-            """
-        case .writeFailed(let detail): return "settings.json を書き込めませんでした: \(detail)"
+            """, """
+            Another statusLine command is already set:
+              \(command)
+            To replace it, run `usagebar-bridge install --force` (the current settings are backed up first).
+            """)
+        case .writeFailed(let detail):
+            return tr("settings.json を書き込めませんでした: \(detail)", "Could not write settings.json: \(detail)")
         case .changedConcurrently:
-            return "読み込んでから書き込むまでの間に settings.json が書き換えられました。変更していません。もう一度実行してください。"
+            return tr("読み込んでから書き込むまでの間に settings.json が書き換えられました。変更していません。もう一度実行してください。",
+                      "settings.json changed while it was being updated. Nothing was changed. Please run the command again.")
         case .temporaryLocation(let path):
-            return """
+            return tr("""
             このコマンドはビルド用のフォルダにあります:
               \(path)
             次のビルドで消えると、Claude Code のステータスラインが動かなくなります。
             scripts/build-app.sh --install で ~/Applications に配置し、そこにある usagebar-bridge で install を実行してください。
             （このまま登録する場合は --force を付けてください）
-            """
+            """, """
+            This command is inside a build folder:
+              \(path)
+            The next build deletes it, and Claude Code's status line would stop working.
+            Run scripts/build-app.sh --install, then run install with the usagebar-bridge in ~/Applications.
+            (To register this path anyway, add --force.)
+            """)
         }
     }
 }
@@ -162,11 +183,11 @@ func loadSettings(_ path: String) throws -> (settings: [String: Any], fingerprin
     guard fingerprint.exists else { return ([:], fingerprint) }
     // パスで読む（URL を受け取る API は使わない）。
     guard let data = FileManager.default.contents(atPath: path) else {
-        throw InstallError.settingsUnreadable("読み込めませんでした")
+        throw InstallError.settingsUnreadable(tr("読み込めませんでした", "could not read the file"))
     }
     if data.isEmpty { return ([:], fingerprint) }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-        throw InstallError.settingsUnreadable("トップレベルがオブジェクトではありません")
+        throw InstallError.settingsUnreadable(tr("トップレベルがオブジェクトではありません", "the top level is not an object"))
     }
     return (object, fingerprint)
 }
@@ -179,7 +200,7 @@ func saveSettings(_ settings: [String: Any], to path: String, expecting fingerpr
     let directory = (target as NSString).deletingLastPathComponent
     var dirStat = stat()
     guard lstat(directory, &dirStat) == 0, (dirStat.st_mode & S_IFMT) == S_IFDIR, dirStat.st_uid == getuid() else {
-        throw InstallError.writeFailed("\(directory) が自分のディレクトリではありません")
+        throw InstallError.writeFailed(tr("\(directory) が自分のディレクトリではありません", "\(directory) is not a directory you own"))
     }
 
     var mode: mode_t = 0o600
@@ -191,7 +212,7 @@ func saveSettings(_ settings: [String: Any], to path: String, expecting fingerpr
         let backup = target + ".usagebar-backup-" + formatter.string(from: Date())
         try FileManager.default.copyItem(atPath: target, toPath: backup)
         chmod(backup, 0o600)
-        print("バックアップ: \(backup)")
+        print(tr("バックアップ: \(backup)", "Backup: \(backup)"))
     }
     let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     guard writeAtomically(data + Data("\n".utf8), to: target, mode: mode) else {
@@ -225,33 +246,37 @@ func install(force: Bool) throws {
         "padding": 0,
     ] as [String: Any]
     try saveSettings(settings, to: path, expecting: fingerprint)
-    print("Claude Code の statusLine に登録しました: \(executable)")
-    print("Claude Code で次に応答を受け取ったときから、UsageBar に使用率が表示されます。")
+    print(tr("Claude Code の statusLine に登録しました: \(executable)", "Registered as Claude Code's statusLine: \(executable)"))
+    print(tr("Claude Code で次に応答を受け取ったときから、UsageBar に使用率が表示されます。",
+             "UsageBar shows Claude's usage from the next response Claude Code receives."))
 }
 
 func uninstall() throws {
     let path = UsagePaths.claudeSettings
     var (settings, fingerprint) = try loadSettings(path)
     guard isOurStatusLine(settings["statusLine"]) else {
-        print("UsageBar の statusLine は登録されていません。変更しませんでした。")
+        print(tr("UsageBar の statusLine は登録されていません。変更しませんでした。",
+                 "UsageBar's statusLine is not registered. Nothing was changed."))
         return
     }
     settings.removeValue(forKey: "statusLine")
     try saveSettings(settings, to: path, expecting: fingerprint)
-    print("statusLine の登録を外しました。")
+    print(tr("statusLine の登録を外しました。", "Removed the statusLine entry."))
 }
 
 func printStatus() {
     guard let snapshot = ClaudeBridgeSnapshot.load(path: UsagePaths.claudeBridgeSnapshot) else {
-        print("まだ値を受け取っていません（\(UsagePaths.claudeBridgeSnapshot)）。")
+        print(tr("まだ値を受け取っていません（\(UsagePaths.claudeBridgeSnapshot)）。",
+                 "No values received yet (\(UsagePaths.claudeBridgeSnapshot))."))
         return
     }
     let now = Date()
     let observed = Date(timeIntervalSince1970: snapshot.observed_at)
-    print("受信時刻: \(observed)（\(shortDuration(now.timeIntervalSince(observed))) 前）")
+    let elapsed = shortDuration(now.timeIntervalSince(observed))
+    print(tr("受信時刻: \(observed)（\(elapsed) 前）", "Received: \(observed) (\(elapsed) ago)"))
     for window in snapshot.rateLimitSnapshot.windows {
-        let reset = window.resetsAt.map { " / リセット \($0)" } ?? ""
-        print("\(window.label): \(window.usedPercent)%\(reset)")
+        let reset = window.resetsAt.map { tr(" / リセット \($0)", " / resets \($0)") } ?? ""
+        print("\(window.label(in: language)): \(window.usedPercent)%\(reset)")
     }
 }
 
@@ -285,6 +310,6 @@ case "uninstall":
 case "status":
     printStatus()
 default:
-    FileHandle.standardError.write(Data("使い方: usagebar-bridge [install [--force] | uninstall | status]\n".utf8))
+    FileHandle.standardError.write(Data((tr("使い方", "Usage") + ": usagebar-bridge [install [--force] | uninstall | status]\n").utf8))
     exit(2)
 }

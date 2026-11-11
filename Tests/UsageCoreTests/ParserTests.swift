@@ -84,7 +84,8 @@ final class CodexLogParserTests: XCTestCase {
             return nil
         }.first)
         XCTAssertEqual(snapshot.planType, "plus")
-        XCTAssertEqual(snapshot.windows.map(\.label), ["週間枠", "5時間枠"])
+        XCTAssertEqual(snapshot.windows.map { $0.label(in: .ja) }, ["週間枠", "5時間枠"])
+        XCTAssertEqual(snapshot.windows.map { $0.label(in: .en) }, ["Weekly", "5-hour"])
         XCTAssertEqual(snapshot.windows[0].resetsAt, Date(timeIntervalSince1970: 1_794_400_000))
         XCTAssertEqual(snapshot.windows[1].resetsAt, LogTimestamp.parse("2026-11-11T07:10:00Z"))
         XCTAssertEqual(snapshot.highestPercent(at: LogTimestamp.parse("2026-11-11T07:05:00Z")!), 42.5)

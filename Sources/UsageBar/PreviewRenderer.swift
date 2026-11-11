@@ -18,7 +18,7 @@ enum PreviewRenderer {
         semaphore.wait()
         guard let summary = result else { exit(1) }
 
-        let store = UsageStore(fixedSummary: summary, now: summary.generatedAt)
+        let store = UsageStore(fixedSummary: summary, now: summary.generatedAt, language: .fromSystem())
         for scheme in [ColorScheme.light, .dark] {
             let popover = PopoverView()
                 .environmentObject(store)
@@ -29,7 +29,8 @@ enum PreviewRenderer {
         let label = MenuBarLabel(
             claudePercent: store.menuBarPercent(for: .claude),
             codexPercent: store.menuBarPercent(for: .codex),
-            showPercent: true
+            showPercent: true,
+            language: store.language
         )
         .padding(4)
         .background(Color(white: 0.9))
@@ -44,10 +45,12 @@ enum PreviewRenderer {
         NSApp.setActivationPolicy(.prohibited)
         // 表示が毎回同じになるよう、基準の時刻を固定する。
         let now = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 10, minute: 24)) ?? Date()
-        let store = UsageStore(fixedSummary: DemoData.summary(now: now), now: now)
-        for (scheme, name) in [(ColorScheme.dark, "dark"), (.light, "light")] {
-            let screen = DemoScreen(scheme: scheme).environmentObject(store)
-            snapshot(screen, dark: scheme == .dark, to: "\(directory)/screenshot-\(name).png")
+        for language in AppLanguage.allCases {
+            let store = UsageStore(fixedSummary: DemoData.summary(now: now), now: now, language: language)
+            for (scheme, name) in [(ColorScheme.dark, "dark"), (.light, "light")] {
+                let screen = DemoScreen(scheme: scheme).environmentObject(store)
+                snapshot(screen, dark: scheme == .dark, to: "\(directory)/screenshot-\(language.rawValue)-\(name).png")
+            }
         }
         exit(0)
     }

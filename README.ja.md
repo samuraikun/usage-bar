@@ -7,8 +7,8 @@ UsageBar は、Claude Code と Codex CLI の利用上限をどれだけ使った
 このアプリは外部と一切通信しません。それをコードの作りだけでなく macOS が保証しています。アプリは通信の権限を付けずに App Sandbox の中で動かしているからです。認証情報にも触れません。使用率の数値は、2 つの CLI が手元にすでに書いているものを読みます。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot-light.png" alt="メニューバーから UsageBar を開いたところ。Claude と Codex の 5 時間枠と週間枠の使用率、今日と直近 5 時間のトークン数、過去 7 日の推移が並ぶ。値はすべて架空" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-ja-dark.png">
+  <img src="docs/screenshot-ja-light.png" alt="メニューバーから UsageBar を開いたところ。Claude と Codex の 5 時間枠と週間枠の使用率、今日と直近 5 時間のトークン数、過去 7 日の推移が並ぶ。値はすべて架空" width="520">
 </picture>
 
 <sub>画面の値はすべて架空のものです。</sub>
@@ -18,6 +18,7 @@ UsageBar は、Claude Code と Codex CLI の利用上限をどれだけ使った
 - **メニューバー**: 2 本のメーターと使用率を並べます。上が Claude、下が Codex です。それぞれ、最も上限に近い枠の使用率を出します。
 - **クリックしたとき**: 枠（5 時間枠・週間枠）ごとの使用率とリセットまでの時間を出します。その下に、今日と直近 5 時間のトークン数、過去 7 日の推移、モデル別の内訳が並びます。
 - **更新**: CLI が新しい応答をログに書いてから 1 秒以内に変わります。詳しくは[表示が更新されるタイミング](#表示が更新されるタイミング)にまとめています。
+- **表示言語**: 日本語と英語に対応しています。最初は Mac のシステム設定の言語の並びに従います（日本語が英語より上にあれば日本語、それ以外は英語）。ポップオーバーの下の「表示言語」で選び直すこともでき、再起動しなくてもその場で切り替わります。
 
 ## なぜ外部と通信しない作りにしたか
 
@@ -123,6 +124,8 @@ scripts/verify-security.sh --binary /usr/bin/nc                     # 実行フ�
 4. 2 つの実行ファイルに URL の文字列が無い
 5. システムのライブラリだけを読み込み、Network / CFNetwork / WebKit / Security のフレームワークを直接読み込んでいない
 6. 指定したアプリが起動していて、サンドボックスの中で動き、ネットワークのソケットを開いていない
+
+3 には例外が 1 つあります。`dlsym` は、呼び出し元が `__initializeAvailabilityCheck` だけのときに限って許します。これはコンパイラに付属する部品（compiler-rt）の関数で、OS のバージョン確認（`#available`）を支えています。SwiftUI も内部で使っており、macOS の決まった関数を 1 つ探すだけです。`dlopen` がある場合や、ほかの場所から `dlsym` を呼んでいる場合は NG にします。
 
 検査に使う道具が失敗したときは、OK にせず NG にします。通信するプログラムに当てると NG になることも確かめています。
 

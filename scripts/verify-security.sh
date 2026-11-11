@@ -49,7 +49,7 @@ pass() { printf '  OK   %s\n' "$1"; }
 fail() { printf '  NG   %s\n' "$1"; failures=$((failures + 1)); }
 indent() { sed 's/^/         /'; }
 
-for tool in codesign plutil nm strings otool lsof xcrun; do
+for tool in codesign plutil nm strings otool objdump lsof xcrun; do
   command -v "${tool}" >/dev/null || { echo "${tool} が見つかりません"; exit 2; }
 done
 
@@ -113,6 +113,22 @@ for bin in "${BINARIES[@]}"; do
     fail "${name}: シンボルを読み替えられない"; continue
   fi
   hits="$( { sed 's/^_//' <<<"$symbols" | grep -Ex "$C_SYMBOLS"; grep -E "$NAME_PATTERNS" <<<"$demangled"; } | sort -u)"
+  # dlsym は、OS のバージョン確認（Swift の #available。SwiftUI などの部品の中でも使われる）のために
+  # コンパイラが組み込む __initializeAvailabilityCheck（compiler-rt）も使う。これは OS の決まった関数を
+  # 探すだけなので、呼び出し元がこの関数だけで、dlopen を使っていないときに限って許す。
+  if grep -qx 'dlsym' <<<"$hits" && ! grep -qx 'dlopen' <<<"$hits"; then
+    if ! disassembly="$(objdump --macho --disassemble --no-show-raw-insn "$bin" 2>/dev/null)" || [[ -z "$disassembly" ]]; then
+      fail "${name}: dlsym の呼び出し元を調べるための逆アセンブルができない"
+    else
+      callers="$(awk '/^[^ \t].*:$/ {fn=$0} /symbol stub for: _dlsym$/ {print fn}' <<<"$disassembly" | sort -u)"
+      if [[ "$callers" == "__initializeAvailabilityCheck:" ]]; then
+        pass "${name}: dlsym の呼び出し元は、OS のバージョン確認用の __initializeAvailabilityCheck だけ"
+        hits="$(grep -vx 'dlsym' <<<"$hits")"
+      else
+        fail "${name}: dlsym を OS のバージョン確認以外から呼んでいる:"; indent <<<"${callers:-（呼び出し元を特定できない）}"
+      fi
+    fi
+  fi
   if [[ -z "$hits" ]]; then
     pass "${name}: 該当する API を参照していない（参照シンボル $(wc -l <<<"$symbols" | tr -d ' ') 個を確認）"
   else

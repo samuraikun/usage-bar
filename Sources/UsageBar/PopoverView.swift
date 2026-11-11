@@ -7,6 +7,12 @@ struct PopoverView: View {
     @EnvironmentObject private var store: UsageStore
 
     var body: some View {
+        content
+            .environment(\.appLanguage, store.language)
+            .environment(\.locale, store.language.locale)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let summary = store.summary {
                 ProviderSection(summary: summary.claude, now: store.now)
@@ -15,7 +21,7 @@ struct PopoverView: View {
             } else {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("ログを読み込んでいます…").foregroundStyle(.secondary)
+                    Text(Strings(language: store.language).loading).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, minHeight: 80)
             }
@@ -31,8 +37,11 @@ struct PopoverView: View {
 
 private struct ProviderSection: View {
     @EnvironmentObject private var store: UsageStore
+    @Environment(\.appLanguage) private var language
     let summary: ProviderSummary
     let now: Date
+
+    private var s: Strings { Strings(language: language) }
 
     /// この時間より古い値は「最後に取得した値」と明示する。
     private static let staleAfter: TimeInterval = 30 * 60
@@ -45,7 +54,7 @@ private struct ProviderSection: View {
                     RateWindowRow(window: window, now: now)
                 }
                 if now.timeIntervalSince(limits.observedAt) > Self.staleAfter {
-                    Text("\(Format.ago(limits.observedAt, now: now))に取得した値です。\(summary.provider.displayName) を使うと更新されます。")
+                    Text(s.stale(Format.ago(limits.observedAt, now: now, language: language), provider: summary.provider.displayName))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -53,8 +62,9 @@ private struct ProviderSection: View {
                 missingLimits
             }
             TokenSummaryView(summary: summary)
-            ForEach(summary.notes.filter { !(summary.provider == .claude && summary.rateLimits == nil && $0.contains("usagebar-bridge")) }, id: \.self) { note in
-                Text(note).font(.caption2).foregroundStyle(.secondary)
+            // 中継コマンドの案内は、値が届いていないときに上で詳しく出しているので重ねない。
+            ForEach(summary.notes.filter { $0 != .claudeBridgeNotConfigured }, id: \.self) { note in
+                Text(s.note(note)).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -71,7 +81,7 @@ private struct ProviderSection: View {
             }
             Spacer()
             if let observed = summary.rateLimits?.observedAt {
-                Text("使用率の取得: \(Format.ago(observed, now: now))")
+                Text(s.observed(Format.ago(observed, now: now, language: language)))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -83,7 +93,7 @@ private struct ProviderSection: View {
         switch summary.provider {
         case .claude:
             VStack(alignment: .leading, spacing: 6) {
-                Text("使用率はまだ届いていません。Claude Code のステータスラインから受け取るため、次のコマンドを一度だけ実行してください。")
+                Text(s.claudeSetupIntro)
                     .font(.caption)
                     .fixedSize(horizontal: false, vertical: true)
                 let command = "\(StatusLineCommand.quoted(store.claudeBridgeExecutablePath)) install"
@@ -101,14 +111,14 @@ private struct ProviderSection: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                     }
-                    .help("コマンドをコピー")
+                    .help(s.copyCommand)
                 }
-                Text("設定後、Claude Code で応答を受け取るたびに更新されます。")
+                Text(s.claudeSetupAfter)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         case .codex:
-            Text("使用率はまだ見つかっていません。Codex CLI を使うと、ログから読み取って表示します。")
+            Text(s.codexMissing)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -116,15 +126,17 @@ private struct ProviderSection: View {
 }
 
 private struct RateWindowRow: View {
+    @Environment(\.appLanguage) private var language
     let window: RateWindow
     let now: Date
 
     var body: some View {
         let expired = window.isExpired(at: now)
         let percent = window.currentPercent(at: now)
+        let s = Strings(language: language)
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(window.label).font(.subheadline)
+                Text(window.label(in: language)).font(.subheadline)
                 Spacer()
                 Text(Format.percent(percent))
                     .font(.subheadline.monospacedDigit().weight(.semibold))
@@ -133,8 +145,9 @@ private struct RateWindowRow: View {
             UsageBarView(fraction: percent / 100)
             if let resetsAt = window.resetsAt {
                 Text(expired
-                     ? "リセット済み（次に使ったときに更新）"
-                     : "リセット: \(Format.remaining(until: resetsAt, now: now))（\(Format.moment(resetsAt, now: now))）")
+                     ? s.resetPassed
+                     : s.resets(Format.remaining(until: resetsAt, now: now, language: language),
+                                at: Format.moment(resetsAt, now: now, language: language)))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -172,28 +185,31 @@ private enum UsageColor {
 // MARK: - トークン数
 
 private struct TokenSummaryView: View {
+    @Environment(\.appLanguage) private var language
     let summary: ProviderSummary
+
+    private var s: Strings { Strings(language: language) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 3) {
                 GridRow {
                     Text("").gridColumnAlignment(.leading)
-                    header("合計")
-                    header("入力")
-                    header("出力")
-                    header("キャッシュ読込")
+                    header(s.total)
+                    header(s.input)
+                    header(s.output)
+                    header(s.cacheRead)
                 }
-                tokenRow("今日", summary.today)
-                tokenRow("直近5時間", summary.rolling5Hours)
+                tokenRow(s.today, summary.today)
+                tokenRow(s.last5Hours, summary.rolling5Hours)
             }
             .font(.caption.monospacedDigit())
 
             if summary.last7Days.contains(where: { $0.tokens.total > 0 }) {
                 Chart(summary.last7Days) { day in
                     BarMark(
-                        x: .value("日", day.day, unit: .day),
-                        y: .value("トークン", day.tokens.total)
+                        x: .value(s.chartDay, day.day, unit: .day),
+                        y: .value(s.chartTokens, day.tokens.total)
                     )
                     .foregroundStyle(summary.provider == .claude ? Color.orange.gradient : Color.blue.gradient)
                     .cornerRadius(2)
@@ -201,7 +217,7 @@ private struct TokenSummaryView: View {
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .day)) { value in
                         AxisValueLabel {
-                            if let date = value.as(Date.self) { Text(Format.weekday(date)) }
+                            if let date = value.as(Date.self) { Text(Format.weekday(date, language: language)) }
                         }
                     }
                 }
@@ -214,7 +230,7 @@ private struct TokenSummaryView: View {
                     }
                 }
                 .frame(height: 64)
-                .accessibilityLabel("過去7日のトークン数")
+                .accessibilityLabel(s.chartAccessibility)
             }
 
             if !summary.todayByModel.isEmpty {
@@ -252,25 +268,34 @@ private struct TokenSummaryView: View {
 
 private struct SettingsSection: View {
     @EnvironmentObject private var store: UsageStore
+    @Environment(\.appLanguage) private var language
 
     var body: some View {
+        let s = Strings(language: language)
         VStack(alignment: .leading, spacing: 6) {
-            Label("外部との通信なし（App Sandbox で通信の権限を付けていません）・ログは読み取り専用", systemImage: "lock.shield")
+            Label(s.noNetwork, systemImage: "lock.shield")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Toggle("メニューバーに使用率を表示", isOn: $store.showPercentInMenuBar)
-            Toggle("ログイン時に起動", isOn: Binding(
+            Toggle(s.showPercent, isOn: $store.showPercentInMenuBar)
+            Toggle(s.launchAtLogin, isOn: Binding(
                 get: { store.launchAtLogin },
                 set: { store.setLaunchAtLogin($0) }
             ))
             if let error = store.launchAtLoginError {
-                Text(error).font(.caption2).foregroundStyle(.red)
+                Text(s.launchAtLoginFailed(error)).font(.caption2).foregroundStyle(.red)
             }
+            Picker(s.languageLabel, selection: $store.languagePreference) {
+                ForEach(LanguagePreference.allCases) { preference in
+                    Text(s.languageOption(preference)).tag(preference)
+                }
+            }
+            .pickerStyle(.menu)
+            .fixedSize()
             HStack {
-                Button("再読み込み") { store.refreshNow() }
+                Button(s.reload) { store.refreshNow() }
                 Spacer()
-                Button("終了") { NSApp.terminate(nil) }
+                Button(s.quit) { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
         }

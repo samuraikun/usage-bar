@@ -7,17 +7,18 @@ UsageBar is a macOS menu bar app that shows how much of your Claude Code and Cod
 It never connects to the network. macOS enforces this, not just the code: the app runs in the App Sandbox without the network entitlement. It never touches your credentials. Instead, it reads the usage numbers that the two CLIs already write on your Mac.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-  <img src="docs/screenshot-light.png" alt="UsageBar opened from the menu bar. It shows the 5-hour and weekly limits for Claude and Codex, token counts for today and the last 5 hours, and a 7-day chart. All values are made up." width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-en-dark.png">
+  <img src="docs/screenshot-en-light.png" alt="UsageBar opened from the menu bar. It shows the 5-hour and weekly limits for Claude and Codex, token counts for today and the last 5 hours, and a 7-day chart. All values are made up." width="520">
 </picture>
 
-<sub>All values in the screenshot are made up. The interface is currently in Japanese.</sub>
+<sub>All values in the screenshot are made up.</sub>
 
 ## What it shows
 
 - **Menu bar:** two meters and two percentages. The top one is Claude and the bottom one is Codex. Each shows the window closest to its limit.
 - **Popover:** for each window (5-hour, weekly), how much is used and when it resets. Below that: tokens for today and the last 5 hours, a 7-day chart, and today's tokens per model.
 - **Updates:** within a second of the CLI writing a new response. See [When the numbers update](#when-the-numbers-update).
+- **Language:** English or Japanese. By default it follows the language order in macOS System Settings (Japanese if it comes before English, otherwise English). You can also pick one under "Language" at the bottom of the popover. The change applies immediately, without a restart.
 
 ## Why it never touches the network
 
@@ -119,6 +120,8 @@ The script checks the following:
 4. Neither executable contains a URL string.
 5. Only system libraries are linked, and there is no direct link to Network, CFNetwork, WebKit or Security frameworks.
 6. The given app is running, is sandboxed, and has no open network sockets.
+
+One exception applies to check 3. `dlsym` is allowed only when its sole caller is `__initializeAvailabilityCheck`. This function comes from the compiler runtime (compiler-rt) and supports OS version checks (`#available`), which SwiftUI also uses internally. It only looks up a fixed function in macOS. If `dlopen` is present, or `dlsym` is called from anywhere else, the check fails.
 
 If any tool used by a check fails, the check reports a failure instead of passing. The script was also tested against programs that do use the network. It fails on `nc` (`connect`, `getaddrinfo`), on a small URLSession program (`NSURLSession`, `dataTaskWithURL:`) and on `curl` (embedded URLs). Checks 3 and 4 are the main evidence for the helper, because it runs outside the sandbox. They cannot catch a URL assembled at run time, so read `Sources/UsageBarBridge/main.swift` too. It is about 300 lines.
 

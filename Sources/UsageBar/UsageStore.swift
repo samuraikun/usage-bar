@@ -10,12 +10,24 @@ final class UsageStore: ObservableObject {
     @Published private(set) var summary: UsageSummary?
     @Published private(set) var now = Date()
     @Published private(set) var launchAtLogin = SMAppService.mainApp.status == .enabled
+    /// ログイン時に起動の設定に失敗したときの、macOS が返した理由。
     @Published private(set) var launchAtLoginError: String?
     @Published var showPercentInMenuBar: Bool {
         didSet { UserDefaults.standard.set(showPercentInMenuBar, forKey: Self.showPercentKey) }
     }
+    @Published var languagePreference: LanguagePreference {
+        didSet { UserDefaults.standard.set(languagePreference.rawValue, forKey: Self.languageKey) }
+    }
+    /// Mac の言語設定が変わったときに描き直すための値。
+    @Published private var systemLanguage = AppLanguage.fromSystem()
+
+    /// いま画面に使う言語。
+    var language: AppLanguage {
+        languagePreference == .system ? systemLanguage : languagePreference.resolved()
+    }
 
     private static let showPercentKey = "showPercentInMenuBar"
+    private static let languageKey = "languagePreference"
     private static let logger = Logger(subsystem: "local.usagebar", category: "store")
     /// 表示中の「あと何分」を進める間隔。
     private static let tickInterval: TimeInterval = 30
@@ -26,18 +38,22 @@ final class UsageStore: ObservableObject {
     private var watcher: FileWatcher?
     private var timer: Timer?
     private var wakeObserver: NSObjectProtocol?
+    private var localeObserver: NSObjectProtocol?
     private var lastFullScan = Date.distantPast
     private var appliedSequence = 0
 
     /// 画面の確認用。ファイル監視もタイマーも動かさず、渡した集計結果だけを表示する。
-    init(fixedSummary: UsageSummary, now: Date) {
+    init(fixedSummary: UsageSummary, now: Date, language: AppLanguage) {
         showPercentInMenuBar = true
+        languagePreference = language == .ja ? .ja : .en
         summary = fixedSummary
         self.now = now
     }
 
     init() {
         showPercentInMenuBar = UserDefaults.standard.object(forKey: Self.showPercentKey) as? Bool ?? true
+        languagePreference = UserDefaults.standard.string(forKey: Self.languageKey)
+            .flatMap(LanguagePreference.init(rawValue:)) ?? .system
 
         watcher = FileWatcher { [weak self] paths, needsFullScan in
             MainActor.assumeIsolated {
@@ -54,6 +70,11 @@ final class UsageStore: ObservableObject {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshNow() }
+        }
+        localeObserver = NotificationCenter.default.addObserver(
+            forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemLanguage = AppLanguage.fromSystem() }
         }
     }
 
@@ -86,7 +107,7 @@ final class UsageStore: ObservableObject {
             }
             launchAtLoginError = nil
         } catch {
-            launchAtLoginError = "設定できませんでした: \(error.localizedDescription)"
+            launchAtLoginError = error.localizedDescription
         }
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }

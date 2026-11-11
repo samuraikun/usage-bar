@@ -43,7 +43,8 @@ final class ClaudeBridgeSnapshotTests: XCTestCase {
         XCTAssertNil(snapshot.spend_limit)
         let encoded = String(decoding: try snapshot.encoded(), as: UTF8.self)
         XCTAssertFalse(encoded.contains("secret"), "ステータスラインの入力のうち、数値以外はファイルに書かない")
-        XCTAssertEqual(snapshot.rateLimitSnapshot.windows.map(\.label), ["5時間枠", "週間枠"])
+        XCTAssertEqual(snapshot.rateLimitSnapshot.windows.map { $0.label(in: .ja) }, ["5時間枠", "週間枠"])
+        XCTAssertEqual(snapshot.rateLimitSnapshot.windows.map { $0.label(in: .en) }, ["5-hour", "Weekly"])
     }
 
     func testReturnsNilWithoutRateLimits() {
@@ -146,7 +147,7 @@ final class UsageEngineTests: XCTestCase {
         XCTAssertEqual(summary.codex.rolling5Hours.total, 120)
         XCTAssertEqual(summary.codex.rateLimits?.windows.first?.usedPercent, 33)
         XCTAssertEqual(summary.codex.rateLimits?.planType, "pro")
-        XCTAssertEqual(summary.codex.notes.count, 1)
+        XCTAssertEqual(summary.codex.notes, [.compressedLogsSkipped(1)])
     }
 
     func testIgnoresChangedPathsOutsideRoots() async throws {

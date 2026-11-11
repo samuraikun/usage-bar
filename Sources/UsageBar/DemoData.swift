@@ -65,7 +65,8 @@ struct DemoScreen: View {
                 MenuBarLabel(
                     claudePercent: store.menuBarPercent(for: .claude),
                     codexPercent: store.menuBarPercent(for: .codex),
-                    showPercent: true
+                    showPercent: true,
+                    language: store.language
                 )
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 8)
@@ -73,7 +74,7 @@ struct DemoScreen: View {
                 .background(.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
                 Image(systemName: "wifi")
                 Image(systemName: "battery.75percent")
-                Text(Format.moment(store.now, now: store.now)).font(.system(size: 13, weight: .medium)).monospacedDigit()
+                Text(Format.moment(store.now, now: store.now, language: store.language)).font(.system(size: 13, weight: .medium)).monospacedDigit()
             }
             .padding(.horizontal, 12)
             .frame(width: 520, height: 26)
