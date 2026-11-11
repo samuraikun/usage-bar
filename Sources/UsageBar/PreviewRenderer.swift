@@ -37,6 +37,38 @@ enum PreviewRenderer {
         exit(0)
     }
 
+    /// README 用の画面。値はすべて架空のもので、手元のログは読まない。
+    /// ボタンやチェックボックスも描けるよう、ImageRenderer ではなく実際のウインドウと同じ NSHostingView で描く。
+    static func renderDemoAndExit(to directory: String) -> Never {
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        // 表示が毎回同じになるよう、基準の時刻を固定する。
+        let now = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 10, minute: 24)) ?? Date()
+        let store = UsageStore(fixedSummary: DemoData.summary(now: now), now: now)
+        for (scheme, name) in [(ColorScheme.dark, "dark"), (.light, "light")] {
+            let screen = DemoScreen(scheme: scheme).environmentObject(store)
+            snapshot(screen, dark: scheme == .dark, to: "\(directory)/screenshot-\(name).png")
+        }
+        exit(0)
+    }
+
+    private static func snapshot<V: View>(_ view: V, dark: Bool, to path: String) {
+        let hosting = NSHostingView(rootView: view)
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        hosting.appearance = appearance
+        hosting.frame = NSRect(origin: .zero, size: hosting.fittingSize)
+        let window = NSWindow(contentRect: hosting.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.appearance = appearance
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { return }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        try? png.write(to: URL(fileURLWithPath: path))
+        print("wrote \(path) \(bitmap.pixelsWide)x\(bitmap.pixelsHigh)")
+    }
+
     private static func write<V: View>(_ view: V, to path: String) {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2

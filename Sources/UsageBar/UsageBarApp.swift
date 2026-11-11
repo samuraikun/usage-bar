@@ -8,6 +8,12 @@ enum Main {
         if CommandLine.arguments.contains("--print-summary") {
             DiagnosticSummary.printAndExit()
         }
+        if let index = CommandLine.arguments.firstIndex(of: "--render-demo"),
+           CommandLine.arguments.indices.contains(index + 1) {
+            MainActor.assumeIsolated {
+                PreviewRenderer.renderDemoAndExit(to: CommandLine.arguments[index + 1])
+            }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--render-preview"),
            CommandLine.arguments.indices.contains(index + 1) {
             MainActor.assumeIsolated {

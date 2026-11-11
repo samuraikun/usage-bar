@@ -1,131 +1,176 @@
 # UsageBar
 
-Claude Code と Codex CLI の使用状況を、Mac のメニューバーに表示するアプリです。
-外部とは通信せず、手元のログだけを読みます。
+**English** | [日本語](README.ja.md)
 
-<img src="docs/screenshot.png" alt="メニューバーの UsageBar を開いたところ。Claude の 5 時間枠と週間枠、Codex の週間枠の使用率、今日と直近 5 時間のトークン数、過去 7 日の推移が並ぶ" width="391">
+UsageBar is a macOS menu bar app that shows how much of your Claude Code and Codex CLI rate limits you have used, updating within a second of each response.
 
-- メニューバーには 2 本のメーターと数値が並びます。上が Claude、下が Codex で、それぞれ最も上限に近い枠の使用率です。
-- クリックすると、枠ごとの使用率とリセットまでの残り時間、今日と直近 5 時間のトークン数、過去 7 日の推移、モデル別の内訳を表示します。
-- ログが書き足されると、FSEvents で検知して 1 秒以内に表示を更新します。取りこぼしに備えて、5 分ごとにフォルダ全体も見直します。
+It never connects to the network. macOS enforces this, not just the code: the app runs in the App Sandbox without the network entitlement. It never touches your credentials. Instead, it reads the usage numbers that the two CLIs already write on your Mac.
 
-## 値の取得元
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+  <img src="docs/screenshot-light.png" alt="UsageBar opened from the menu bar. It shows the 5-hour and weekly limits for Claude and Codex, token counts for today and the last 5 hours, and a 7-day chart. All values are made up." width="520">
+</picture>
 
-| 表示 | 取得元 | 仕組み |
-|---|---|---|
-| Codex の使用率（5 時間枠・週間枠） | `~/.codex/sessions/**/rollout-*.jsonl` | Codex CLI が応答ごとに書く `token_count` イベントの `rate_limits` |
-| Codex のトークン数 | 同上 | 同じイベントの `last_token_usage`。累計の `total_token_usage` が変わったときだけ数える |
-| Claude の使用率（5 時間枠・週間枠） | `~/.claude/usagebar/claude-rate-limits.json` | Claude Code がステータスラインのコマンドに渡す `rate_limits` を、中継コマンド `usagebar-bridge` が数値だけ書き出す |
-| Claude のトークン数 | `~/.claude/projects/**/*.jsonl` | 応答ごとの `message.usage`。`message.id` と `requestId` で重複を除く |
+<sub>All values in the screenshot are made up. The interface is currently in Japanese.</sub>
 
-どちらも、各 CLI が手元にすでに書いている情報です。UsageBar が API を呼ぶことはありません。
+## What it shows
 
-## セキュリティの方針
+- **Menu bar:** two meters and two percentages. The top one is Claude and the bottom one is Codex. Each shows the window closest to its limit.
+- **Popover:** for each window (5-hour, weekly), how much is used and when it resets. Below that: tokens for today and the last 5 hours, a 7-day chart, and today's tokens per model.
+- **Updates:** within a second of the CLI writing a new response. See [When the numbers update](#when-the-numbers-update).
 
-**通信しないことを OS に強制させる。** アプリ本体は App Sandbox の中で動き、通信の権限（`com.apple.security.network.client` / `network.server`）を持ちません。アプリのコードに不具合や混入があっても、DNS を含めて OS が通信を遮断します。
+## Why it never touches the network
 
-**読める場所を絞る。** ファイルの読み取りは、次の 4 か所だけを読み取り専用で許可しています（`Resources/UsageBar.entitlements`）。
+Tools in this space usually work like this. They read the OAuth token or the browser session of your Claude or ChatGPT subscription. Then they call the provider's usage endpoint on a timer, and those endpoints are often undocumented. So the tool is an always-running process with three things at once:
 
-- `~/.claude/projects/`
-- `~/.claude/usagebar/`
-- `~/.codex/sessions/`
-- `~/.codex/archived_sessions/`
+- a credential that can spend your paid plan,
+- access to the network,
+- and often an auto-updater and third-party dependencies.
 
-`~/.codex/auth.json`、`~/.claude/.credentials.json`、Keychain など認証情報のある場所は読めません。CodexBar などが使う「OAuth トークンを読んで使用量の API を呼ぶ」方式は、認証情報を扱うことになるため採っていません。
+A single bug, or one compromised dependency or update, could send that credential somewhere else. The program you install to watch your usage then becomes the easiest way to steal it.
 
-**ログの本文は扱わない。** 解析用の型にはトークン数・モデル名・時刻・利用上限の項目だけを定義し、会話本文やツールの入出力は読み捨てます。中継コマンドが書くファイルにも、使用率とリセット時刻の数値しか入りません。
+The network turns out to be unnecessary, because the numbers are already on your disk:
 
-**壊れた入力や細工された入力に備える。**
+- **Codex CLI** writes the current rate limits (`rate_limits`: used percent and reset time for each window) into its session log after every response.
+- **Claude Code** passes the same information (`rate_limits`) to its status line command each time it redraws the status line.
 
-- ログとスナップショットはシンボリックリンクをたどらずに開き（`O_NOFOLLOW`）、通常のファイル以外は読みません。
-- 1 行が 32MB を超える行は捨てます。スナップショットは 64KB を超えたら読みません。標準入力も 4MB までしか読みません。
-- トークン数は 1 回あたり 1 兆までに抑え、合計は Int64 の上限で止めます（あふれてアプリが止まらないように）。
-- 使用率は 0〜1000% に収めます。時刻は 2000〜2200 年の範囲外を捨て、2/31 のような存在しない日付も捨てます。
-- 中継コマンドは書き込み先のディレクトリが自分の所有でなければ書きません。ファイルは権限 600 で作り、rename で置き換えます。
+UsageBar reads only these local numbers. Promising "we only call this one endpoint" is not enough, so the app is built so that it *cannot* communicate at all.
 
-**Claude Code の設定を壊さない。** `install` / `uninstall` は次を守ります。
+## Design decisions
 
-- 書き換える前に `settings.json` のバックアップを残す
-- 読み込んでから書き込むまでの間にファイルが変わったら、書かずに止める
-- シンボリックリンクならリンク先を書き換える。元の権限も保つ
-- 自分が登録した形（`usagebar-bridge` の絶対パスだけ）以外の `statusLine` には触れない。`my.sh | usagebar-bridge` のように自分で組み立てたコマンドは、上書きも削除もしない
-- ビルド用のフォルダ（`.build/`、`build.noindex/`）にある `usagebar-bridge` は登録しない。次のビルドで消えるため
+### Approaches compared
 
-**依存を増やさない。** 外部パッケージは使わず、Apple のフレームワークだけで作っています。自動アップデートや利用状況の送信もありません。
+| | Read OAuth token, poll usage API | Read browser cookies, scrape web page | **Read local logs and the status line (chosen)** |
+|---|---|---|---|
+| Credentials handled | Subscription OAuth token | Browser session | **None** |
+| Network access | Required | Required | **None (blocked by the OS)** |
+| Updates while you are not using the CLI | Yes | Yes | No (shows the last value and treats passed resets as 0%) |
+| Breaks when | the private API changes | the web page changes | the CLI's log format changes |
 
-### 確かめ方
+The only thing given up is freshness while you are idle. When you are not using a CLI, its usage is not changing either, except for resets, which UsageBar computes from the reset time. That trade-off was judged acceptable.
 
-```bash
-scripts/verify-security.sh ~/Applications/UsageBar.app       # 起動中のアプリを検査
-scripts/verify-security.sh --skip-runtime build.noindex/UsageBar.app  # 起動していないアプリを検査（6 を省く）
-scripts/verify-security.sh --binary /usr/bin/nc               # 実行ファイル 1 つに 3〜5 だけを行う（検査が NG を出せるかの確認用）
+### Decisions that shape the code
+
+1. **The OS enforces "no network", not the code.** The app has the `com.apple.security.app-sandbox` entitlement and no `network.client` or `network.server`. Even if the code had a bug or something malicious slipped in, macOS would block every connection, including DNS.
+2. **Read access is limited to four directories, read-only.** These are `~/.claude/projects/`, `~/.claude/usagebar/`, `~/.codex/sessions/` and `~/.codex/archived_sessions/` (see `Resources/UsageBar.entitlements`). Places that hold credentials, such as `~/.codex/auth.json`, `~/.claude/.credentials.json` and the Keychain, are outside the sandbox and cannot be read.
+3. **Only numbers are parsed. Conversation text is discarded.** The decoding types contain only token counts, model names, timestamps and rate-limit fields. Prompts, responses and tool output are never kept in memory or written anywhere.
+4. **A small helper delivers Claude's rate limits.** Claude Code runs `usagebar-bridge` as its status line command and passes it JSON on stdin. The helper keeps only the percentages and reset times, and writes them to `~/.claude/usagebar/claude-rate-limits.json` with mode 600. The helper runs outside the sandbox, because Claude Code starts it and it must write that file. For that reason it is kept small, and `scripts/verify-security.sh` checks that it has no network, process-launch or dynamic-loading APIs.
+5. **Every file is treated as untrusted input.** Files are opened without following symlinks. Line, file and stdin sizes are capped. Token counts and timestamps are clamped so that overflow cannot crash the app. A bad line is skipped and does not stop the app.
+6. **Nothing extra comes with the app.** There are no third-party packages (only Apple frameworks), no auto-update, no telemetry and no notarization upload. You build the app locally and sign it ad hoc.
+
+## How it works
+
+```mermaid
+flowchart LR
+  CC[Claude Code] -->|status line JSON| BR[usagebar-bridge]
+  BR -->|percent and reset time only| SNAP["~/.claude/usagebar/"]
+  CC -->|session logs| CL["~/.claude/projects/"]
+  CX[Codex CLI] -->|session logs| XL["~/.codex/sessions/"]
+  SNAP --> APP["UsageBar.app (sandbox, no network)"]
+  CL --> APP
+  XL --> APP
 ```
 
-次を確かめます。
+| Shown value | Source | How |
+|---|---|---|
+| Codex rate limits | `~/.codex/sessions/**/rollout-*.jsonl` | `rate_limits` in the `token_count` event written after each response |
+| Codex tokens | same | `last_token_usage`, counted only when the running total changes, so duplicates and resumed sessions are not counted twice |
+| Claude rate limits | `~/.claude/usagebar/claude-rate-limits.json` | written by `usagebar-bridge` from the status line input |
+| Claude tokens | `~/.claude/projects/**/*.jsonl` | `message.usage` of each response, de-duplicated by `message.id` and `requestId` |
 
-1. App Sandbox が有効で、通信の権限が無い
-2. 読み取りを許可したパスが上の 4 か所だけで、ほかの entitlement が無い
-3. 実行ファイルが、通信（`socket` / `connect` / `getaddrinfo` / `URLSession` / `Data(contentsOf:)` など）、別プログラムの起動（`posix_spawn` / `execve` / `Process` / `NSWorkspace.open` など）、動的な読み込み（`dlopen` / `NSClassFromString` など）、Keychain の読み出しに使う API を参照していない
-4. 実行ファイルに URL の文字列が無い
-5. システム以外のライブラリを読み込んでおらず、Network / CFNetwork / WebKit / Security のフレームワークも直接リンクしていない
-6. 指定したアプリが起動していて、サンドボックスの中で動き、ネットワークのソケットを開いていない
+### When the numbers update
 
-検査に使う道具が失敗したときは、OK にせず NG にします。通信するプログラムに `--binary` で当てると NG になることを確かめてあります（`nc` は `connect` / `getaddrinfo` などで、URLSession を使うプログラムは `NSURLSession` と `dataTaskWithURL:` で、`curl` は埋め込まれた URL で NG）。中継コマンドはサンドボックスの外で動くので、3 と 4 が「通信しない」ことの主な根拠です。実行時に組み立てた URL までは見つけられないため、ソースの確認と合わせて使ってください。
+- **The CLIs write new values** after every response. The Claude helper writes when Claude Code redraws the status line.
+- **UsageBar notices within a second.** It watches the directories with FSEvents and reads only what was appended.
+- **Every 30 seconds** it refreshes the "resets in …" countdown and drops windows whose reset time has passed to 0%.
+- **Every 5 minutes**, and after the Mac wakes from sleep, it rescans everything in case a file event was missed.
+- **With several Claude Code sessions open**, an idle session may redraw its status line with older numbers. Usage within a window never goes down, so the helper keeps the newer window, or the higher percentage within the same window.
 
-## インストール
+## Scope
 
-Xcode（Command Line Tools ではなく Xcode 本体）が必要です。
+In scope: rate-limit percentages and reset times for Claude Code and Codex CLI, and token counts from their local logs.
+
+Out of scope:
+
+- **Cost in dollars.** That would need a price table, and keeping it current means either fetching it or letting it go stale.
+- **Long-term history.** Only the last 8 days are read.
+- **Notifications and other providers.**
+
+## Limitations
+
+- Claude rate limits arrive only while you are logged in with a Claude subscription (Pro, Max, Team or Enterprise). With an API key, only token counts are shown.
+- Codex compresses older session logs into `.jsonl.zst` after about a week. Apple's frameworks cannot decompress zstd, so those files are left out of the token totals. Rate limits come from the newest log and are not affected.
+- Moving the data directories with `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is not supported, because the sandbox allows only the fixed paths above.
+- If `~/.claude/usagebar/` does not exist yet when the app starts, the first Claude value can take up to 30 seconds to appear. After that, updates take under a second.
+
+## Verifying the security claims
 
 ```bash
-scripts/build-app.sh --install      # ~/Applications/UsageBar.app に配置
+scripts/verify-security.sh ~/Applications/UsageBar.app              # installed and running app
+scripts/verify-security.sh --skip-runtime build.noindex/UsageBar.app # built but not running (skips step 6)
+scripts/verify-security.sh --binary /usr/bin/nc                     # one executable, steps 3 to 5 only
+```
+
+The script checks the following:
+
+1. The App Sandbox is on and there is no network entitlement.
+2. The only file exceptions are the four read-only directories, and there are no other entitlements.
+3. Neither executable references APIs for networking (`socket`, `connect`, `getaddrinfo`, `URLSession`, `Data(contentsOf:)` and others), launching programs (`posix_spawn`, `execve`, `Process`, `NSWorkspace.open`), dynamic loading (`dlopen`, `NSClassFromString`) or the Keychain.
+4. Neither executable contains a URL string.
+5. Only system libraries are linked, and there is no direct link to Network, CFNetwork, WebKit or Security frameworks.
+6. The given app is running, is sandboxed, and has no open network sockets.
+
+If any tool used by a check fails, the check reports a failure instead of passing. The script was also tested against programs that do use the network. It fails on `nc` (`connect`, `getaddrinfo`), on a small URLSession program (`NSURLSession`, `dataTaskWithURL:`) and on `curl` (embedded URLs). Checks 3 and 4 are the main evidence for the helper, because it runs outside the sandbox. They cannot catch a URL assembled at run time, so read `Sources/UsageBarBridge/main.swift` too. It is about 300 lines.
+
+## Install
+
+Requires Xcode (the full app, not only the Command Line Tools).
+
+```bash
+scripts/build-app.sh --install     # builds and copies to ~/Applications/UsageBar.app
 open ~/Applications/UsageBar.app
 ```
 
-`~/Applications` に置くと、Raycast や Spotlight で「UsageBar」と打てば出てきます。組み立て途中のアプリは `build.noindex/` に作ります。`.noindex` の付いたフォルダは Spotlight が索引しないので、検索に出るのは配置したアプリだけです。
+Once installed in `~/Applications`, the app can be found by typing "usage" in Spotlight or Raycast. Intermediate builds go to `build.noindex/`, which Spotlight does not index, so searches only find the installed copy.
 
-ad-hoc 署名でローカル用に署名します。Apple の公証には出していません（何も送信しません）。
+### Show Claude's rate limits
 
-### Claude の使用率を表示する
-
-Claude の使用率は、Claude Code のステータスライン経由で受け取ります。一度だけ次を実行してください。
+Run this once:
 
 ```bash
 ~/Applications/UsageBar.app/Contents/MacOS/usagebar-bridge install
 ```
 
-`~/.claude/settings.json` の `statusLine` にこのコマンドを登録します。元のファイルは `settings.json.usagebar-backup-<日時>` として残します。ファイルを書き直すため、キーの並び順は変わります。すでに別の `statusLine` があるときは、上書きせずに止まります（`--force` で上書き）。
+This sets `statusLine` in `~/.claude/settings.json` to the helper. Before writing, it saves a backup as `settings.json.usagebar-backup-<timestamp>`. The file is rewritten, so the order of keys changes. The command also refuses to:
 
-登録すると、Claude Code の画面下部にも `Opus 5.5 │ 5h 23% ↻2h10m │ 7d 41% │ ctx 12%` のような行が出ます。
+- overwrite a status line command that is not its own (unless you pass `--force`),
+- write if the file changed after it was read,
+- register a helper from a build folder.
 
-```bash
-usagebar-bridge status      # 受け取った最新の値を表示
-usagebar-bridge uninstall   # 登録を外す
-```
+If `settings.json` is a symlink, the target file is updated and its permissions are kept.
 
-Claude Code の利用上限は、Claude.ai のサブスクリプション（Pro / Max / Team / Enterprise）でログインしているときだけ届きます。API キーで使っている場合は、トークン数だけを表示します。
-
-## 制約
-
-- Claude の使用率は、Claude Code を使っているあいだに更新されます。使っていないあいだは最後に受け取った値を表示し、リセット時刻を過ぎた枠は 0% として扱います。
-- Claude Code を複数開いていると、しばらく応答を受けていないセッションが古い値を送ってくることがあります。同じ枠の使用率は減らないので、中継コマンドは枠ごとに「リセット時刻が後の方、同じなら使用率が大きい方」を残します。
-- `~/.claude/usagebar/` が無い状態でアプリを起動した場合、初めて値が届いてから表示されるまでに最大 30 秒かかります（フォルダの監視を始めるのが次の見直しのときになるため）。2 回目からは 1 秒以内です。
-- Codex の古いログは、Codex CLI が `.jsonl.zst` に圧縮します（手元では約 1 週間後）。zstd の展開は Apple のフレームワークにないため、圧縮済みのログはトークン数の集計に含めません。使用率は最新のログから読むので影響しません。
-- `CLAUDE_CONFIG_DIR` や `CODEX_HOME` で場所を変えている場合は読めません。サンドボックスで読める場所を固定しているためです。
-
-## 開発
+Claude Code then shows a line like `Opus 5.5 │ 5h 23% ↻2h10m │ 7d 41% │ ctx 12%` at the bottom.
 
 ```bash
-swift test                                         # 単体テスト
-swift build --product UsageBar && \
-  "$(swift build --show-bin-path)/UsageBar" --render-preview /tmp/usagebar   # 画面を PNG に書き出す（サンドボックス外のデバッグビルドで）
-build.noindex/UsageBar.app/Contents/MacOS/UsageBar --print-summary                   # サンドボックスの中で集計結果を表示
-/usr/bin/log show --last 10m --predicate 'subsystem == "local.usagebar"'     # 使用率が更新された記録（数値だけ）
+usagebar-bridge status      # print the last values received
+usagebar-bridge uninstall   # remove the status line entry
 ```
 
-| ディレクトリ | 内容 |
+## Development
+
+```bash
+swift test                                                       # unit tests
+swift build --product UsageBar
+"$(swift build --show-bin-path)/UsageBar" --render-demo docs     # regenerate the README screenshots (made-up data)
+build.noindex/UsageBar.app/Contents/MacOS/UsageBar --print-summary   # print a summary from inside the sandbox
+/usr/bin/log show --last 10m --predicate 'subsystem == "local.usagebar"'   # rate-limit updates (numbers only)
+swift scripts/make-icon.swift Resources/AppIcon.icns            # redraw the app icon
+```
+
+| Directory | Contents |
 |---|---|
-| `Sources/UsageCore` | ログの解析と集計。UI に依存しない |
-| `Sources/UsageBar` | メニューバーのアプリ（SwiftUI の `MenuBarExtra`） |
-| `Sources/UsageBarBridge` | Claude Code のステータスライン用の中継コマンド |
-| `Resources` | Info.plist と entitlements |
-| `scripts` | 組み立て、セキュリティの検査、アイコンの生成（`swift scripts/make-icon.swift Resources/AppIcon.icns`） |
+| `Sources/UsageCore` | Log parsing and aggregation, with no UI code |
+| `Sources/UsageBar` | The menu bar app (SwiftUI `MenuBarExtra`) |
+| `Sources/UsageBarBridge` | The status line helper for Claude Code |
+| `Resources` | `Info.plist`, entitlements, app icon |
+| `scripts` | Build, security checks, icon generation |
