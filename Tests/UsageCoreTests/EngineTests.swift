@@ -160,3 +160,101 @@ final class UsageEngineTests: XCTestCase {
         XCTAssertEqual(summary.claude.trackedFiles, 0)
     }
 }
+
+final class ClaudeUsageCacheTests: XCTestCase {
+    private func config(limits: String, fetchedAtMs: String = "1794380347152") -> Data {
+        Data(#"{"oauthAccount":{"emailAddress":"secret@example.com"},"projects":{"/secret/project":{}},"cachedUsageUtilization":{"fetchedAtMs":\#(fetchedAtMs),"accountUuid":"secret-uuid","utilization":{"five_hour":{"utilization":2},"limits":\#(limits)}}}"#.utf8)
+    }
+
+    func testExtractsOnlyModelScopedWeeklyWindows() throws {
+        let limits = #"""
+        [{"kind":"session","group":"session","percent":2,"resets_at":"2026-11-11T11:50:00.080973+00:00","scope":null},
+         {"kind":"weekly_all","group":"weekly","percent":32,"resets_at":"2026-11-14T21:00:00.080992+00:00","scope":null},
+         {"kind":"weekly_scoped","group":"weekly","percent":5,"resets_at":"2026-11-14T21:00:00.081137+00:00","scope":{"model":{"id":null,"display_name":"Fable"},"surface":null}},
+         {"kind":"weekly_scoped","percent":7,"resets_at":1794690000,"scope":{"model":null,"surface":{"display_name":"Cowork"}}},
+         "unexpected",
+         {"kind":"weekly_scoped","percent":"bad","scope":{"model":{"display_name":"Broken"}}}]
+        """#
+        let windows = ClaudeUsageCache.modelWindows(fromClaudeConfig: config(limits: limits))
+        XCTAssertEqual(windows, [.init(display_name: "Fable", used_percentage: 5, resets_at: 1_794_690_000, observed_at: 1_794_380_347.152)])
+
+        let snapshot = ClaudeBridgeSnapshot(observed_at: 1_794_380_400, five_hour: nil, seven_day: .init(used_percentage: 32, resets_at: 1_794_690_000), spend_limit: nil, model_scoped: windows)
+        let encoded = String(decoding: try snapshot.encoded(), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("secret"), "~/.claude.json のうち、枠の名前と数値以外はファイルに書かない")
+        let rows = snapshot.rateLimitSnapshot.windows
+        XCTAssertEqual(rows.map { $0.label(in: .ja) }, ["週間枠", "週間枠（Fable）"])
+        XCTAssertEqual(rows.map { $0.label(in: .en) }, ["Weekly", "Weekly (Fable)"])
+        XCTAssertNil(rows[0].observedAt)
+        XCTAssertEqual(rows[1].observedAt, Date(timeIntervalSince1970: 1_794_380_347.152))
+    }
+
+    func testAcceptsNumericResetAndCleansNames() {
+        let limits = #"""
+        [{"kind":"weekly_scoped","percent":5000,"resets_at":1794690000.9,"scope":{"model":{"display_name":"Fa\u001b[31mble <b>5.2</b> 日本語 and a very long tail of text"}}},
+         {"kind":"weekly_scoped","percent":1,"resets_at":"not a date","scope":{"model":{"display_name":"Opus"}}},
+         {"kind":"weekly_scoped","percent":9,"scope":{"model":{"display_name":"Opus"}}},
+         {"kind":"weekly_scoped","percent":9,"scope":{"model":{"display_name":"日本"}}}]
+        """#
+        let windows = ClaudeUsageCache.modelWindows(fromClaudeConfig: config(limits: limits))
+        XCTAssertEqual(windows.map(\.display_name), ["Fa31mble b5.2b  and a ve", "Opus"])
+        XCTAssertEqual(windows[0].used_percentage, 1000)
+        XCTAssertEqual(windows[0].resets_at, 1_794_690_000)
+        XCTAssertNil(windows[1].resets_at)
+        XCTAssertEqual(windows[1].used_percentage, 1, "同じ名前の枠は最初の 1 つだけ")
+    }
+
+    func testReturnsNothingForUnexpectedShapes() {
+        XCTAssertEqual(ClaudeUsageCache.modelWindows(fromClaudeConfig: Data("garbage".utf8)), [])
+        XCTAssertEqual(ClaudeUsageCache.modelWindows(fromClaudeConfig: Data(#"{"numStartups":3}"#.utf8)), [])
+        XCTAssertEqual(ClaudeUsageCache.modelWindows(fromClaudeConfig: Data(#"{"cachedUsageUtilization":{"fetchedAtMs":1794380347152,"utilization":{"limits":"x"}}}"#.utf8)), [])
+        let fable = #"[{"kind":"weekly_scoped","percent":5,"scope":{"model":{"display_name":"Fable"}}}]"#
+        XCTAssertEqual(ClaudeUsageCache.modelWindows(fromClaudeConfig: config(limits: fable, fetchedAtMs: "1e30")), [])
+        XCTAssertEqual(ClaudeUsageCache.modelWindows(fromClaudeConfig: config(limits: fable, fetchedAtMs: "\"x\"")), [])
+        XCTAssertEqual(ClaudeUsageCache.loadModelWindows(path: "/nonexistent/.claude.json"), [])
+    }
+
+    func testLoadsFromFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("usagebar-cache-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent(".claude.json")
+        try config(limits: #"[{"kind":"weekly_scoped","percent":5,"resets_at":"2026-11-14T21:00:00+00:00","scope":{"model":{"display_name":"Fable"}}}]"#).write(to: file)
+        XCTAssertEqual(ClaudeUsageCache.loadModelWindows(path: file.path).map(\.resets_at), [1_794_690_000])
+    }
+}
+
+final class ModelWindowMergeTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_794_380_000)
+    private func snap(_ models: [ClaudeBridgeSnapshot.ModelWindow]?) -> ClaudeBridgeSnapshot {
+        ClaudeBridgeSnapshot(observed_at: now.timeIntervalSince1970, five_hour: .init(used_percentage: 1, resets_at: 1_794_390_000), seven_day: nil, spend_limit: nil, model_scoped: models)
+    }
+    private func fable(_ percent: Double, reset: Double, observed: Double) -> ClaudeBridgeSnapshot.ModelWindow {
+        .init(display_name: "Fable", used_percentage: percent, resets_at: reset, observed_at: observed)
+    }
+
+    func testKeepsNewerModelWindowWithItsObservedTime() {
+        let previous = snap([fable(20, reset: 1_794_690_000, observed: 1_794_370_000)])
+        // 古いキャッシュを読み直しただけなら、前回の値と取得時刻を残す。
+        let stale = snap([fable(5, reset: 1_794_690_000, observed: 1_794_300_000)]).merged(onto: previous, now: now)
+        XCTAssertEqual(stale.model_scoped, [fable(20, reset: 1_794_690_000, observed: 1_794_370_000)])
+        let grown = snap([fable(30, reset: 1_794_690_000, observed: 1_794_379_000)]).merged(onto: previous, now: now)
+        XCTAssertEqual(grown.model_scoped, [fable(30, reset: 1_794_690_000, observed: 1_794_379_000)])
+        let nextWeek = snap([fable(1, reset: 1_795_294_800, observed: 1_794_379_000)]).merged(onto: previous, now: now)
+        XCTAssertEqual(nextWeek.model_scoped?.first?.used_percentage, 1)
+    }
+
+    func testMissingModelWindowKeepsUnexpiredPreviousOnly() {
+        let other = ClaudeBridgeSnapshot.ModelWindow(display_name: "Opus", used_percentage: 9, resets_at: now.timeIntervalSince1970 - 10, observed_at: 1_794_300_000)
+        let previous = snap([fable(20, reset: 1_794_690_000, observed: 1_794_370_000), other])
+        let merged = snap(nil).merged(onto: previous, now: now)
+        XCTAssertEqual(merged.model_scoped?.map(\.display_name), ["Fable"], "リセット時刻を過ぎた前回の値は残さない")
+        XCTAssertNil(snap(nil).merged(onto: snap(nil), now: now).model_scoped)
+    }
+
+    func testOldSnapshotFileWithoutModelWindowsStillLoads() throws {
+        let old = #"{"five_hour":{"resets_at":1794464400,"used_percentage":24},"observed_at":1794461625.8,"seven_day":{"resets_at":1794690000,"used_percentage":43},"version":1}"#
+        let decoded = try JSONDecoder().decode(ClaudeBridgeSnapshot.self, from: Data(old.utf8))
+        XCTAssertNil(decoded.model_scoped)
+        XCTAssertEqual(decoded.rateLimitSnapshot.windows.count, 2)
+    }
+}

@@ -16,7 +16,7 @@ It never connects to the network. macOS enforces this, not just the code: the ap
 ## What it shows
 
 - **Menu bar:** two meters and two percentages. The top one is Claude and the bottom one is Codex. Each shows the window closest to its limit.
-- **Popover:** for each window (5-hour, weekly), how much is used and when it resets. Below that: tokens for today and the last 5 hours, a 7-day chart, and today's tokens per model.
+- **Popover:** for each window (5-hour, weekly, and Claude's per-model weekly windows such as Fable), how much is used and when it resets. Below that: tokens for today and the last 5 hours, a 7-day chart, and today's tokens per model.
 - **Updates:** within a second of the CLI writing a new response. See [When the numbers update](#when-the-numbers-update).
 - **Language:** English or Japanese. By default it follows the language order in macOS System Settings (Japanese if it comes before English, otherwise English). You can also pick one under "Language" at the bottom of the popover. The change applies immediately, without a restart.
 
@@ -55,7 +55,7 @@ The only thing given up is freshness while you are idle. When you are not using 
 1. **The OS enforces "no network", not the code.** The app has the `com.apple.security.app-sandbox` entitlement and no `network.client` or `network.server`. Even if the code had a bug or something malicious slipped in, macOS would block every connection, including DNS.
 2. **Read access is limited to four directories, read-only.** These are `~/.claude/projects/`, `~/.claude/usagebar/`, `~/.codex/sessions/` and `~/.codex/archived_sessions/` (see `Resources/UsageBar.entitlements`). Places that hold credentials, such as `~/.codex/auth.json`, `~/.claude/.credentials.json` and the Keychain, are outside the sandbox and cannot be read.
 3. **Only numbers are parsed. Conversation text is discarded.** The decoding types contain only token counts, model names, timestamps and rate-limit fields. Prompts, responses and tool output are never kept in memory or written anywhere.
-4. **A small helper delivers Claude's rate limits.** Claude Code runs `usagebar-bridge` as its status line command and passes it JSON on stdin. The helper keeps only the percentages and reset times, and writes them to `~/.claude/usagebar/claude-rate-limits.json` with mode 600. The helper runs outside the sandbox, because Claude Code starts it and it must write that file. For that reason it is kept small, and `scripts/verify-security.sh` checks that it has no network, process-launch or dynamic-loading APIs.
+4. **A small helper delivers Claude's rate limits.** Claude Code runs `usagebar-bridge` as its status line command and passes it JSON on stdin. The helper keeps only the percentages and reset times, and writes them to `~/.claude/usagebar/claude-rate-limits.json` with mode 600. Per-model weekly windows (such as Fable) are not in that JSON, so the helper also reads the usage result that Claude Code caches in `~/.claude.json`, and keeps only each window's model label, percentage, reset time and fetch time. The label is reduced to letters, digits and a few symbols. The helper runs outside the sandbox, because Claude Code starts it and it must write that file. For that reason it is kept small, and `scripts/verify-security.sh` checks that it has no network, process-launch or dynamic-loading APIs.
 5. **Every file is treated as untrusted input.** Files are opened without following symlinks. Line, file and stdin sizes are capped. Token counts and timestamps are clamped so that overflow cannot crash the app. A bad line is skipped and does not stop the app.
 6. **Nothing extra comes with the app.** There are no third-party packages (only Apple frameworks), no auto-update, no telemetry and no notarization upload. You build the app locally and sign it ad hoc.
 
@@ -64,6 +64,7 @@ The only thing given up is freshness while you are idle. When you are not using 
 ```mermaid
 flowchart LR
   CC[Claude Code] -->|status line JSON| BR[usagebar-bridge]
+  CC -->|cached usage in ~/.claude.json| BR
   BR -->|percent and reset time only| SNAP["~/.claude/usagebar/"]
   CC -->|session logs| CL["~/.claude/projects/"]
   CX[Codex CLI] -->|session logs| XL["~/.codex/sessions/"]
@@ -77,6 +78,7 @@ flowchart LR
 | Codex rate limits | `~/.codex/sessions/**/rollout-*.jsonl` | `rate_limits` in the `token_count` event written after each response |
 | Codex tokens | same | `last_token_usage`, counted only when the running total changes, so duplicates and resumed sessions are not counted twice |
 | Claude rate limits | `~/.claude/usagebar/claude-rate-limits.json` | written by `usagebar-bridge` from the status line input |
+| Claude per-model weekly limits (Fable etc.) | same | `usagebar-bridge` copies them from `cachedUsageUtilization` in `~/.claude.json`, which Claude Code writes when it fetches usage |
 | Claude tokens | `~/.claude/projects/**/*.jsonl` | `message.usage` of each response, de-duplicated by `message.id` and `requestId` |
 
 ### When the numbers update
@@ -85,6 +87,7 @@ flowchart LR
 - **UsageBar notices within a second.** It watches the directories with FSEvents and reads only what was appended.
 - **Every 30 seconds** it refreshes the "resets in …" countdown and drops windows whose reset time has passed to 0%.
 - **Every 5 minutes**, and after the Mac wakes from sleep, it rescans everything in case a file event was missed.
+- **Per-model weekly windows (Fable etc.)** change only when Claude Code itself fetches usage, for example when you open `/usage`. The popover shows how old the value is once it is more than 30 minutes old.
 - **With several Claude Code sessions open**, an idle session may redraw its status line with older numbers. Usage within a window never goes down, so the helper keeps the newer window, or the higher percentage within the same window.
 
 ## Scope
@@ -100,6 +103,7 @@ Out of scope:
 ## Limitations
 
 - Claude rate limits arrive only while you are logged in with a Claude subscription (Pro, Max, Team or Enterprise). With an API key, only token counts are shown.
+- Per-model weekly windows (such as Fable) are not part of the status line input. They come from a cache that Claude Code refreshes only when it fetches usage (for example on `/usage`), so they can be hours old. This cache is not a documented interface; if a Claude Code update changes it, the row disappears and the other values keep working.
 - Codex compresses older session logs into `.jsonl.zst` after about a week. Apple's frameworks cannot decompress zstd, so those files are left out of the token totals. Rate limits come from the newest log and are not affected.
 - Moving the data directories with `CLAUDE_CONFIG_DIR` or `CODEX_HOME` is not supported, because the sandbox allows only the fixed paths above.
 - If `~/.claude/usagebar/` does not exist yet when the app starts, the first Claude value can take up to 30 seconds to appear. After that, updates take under a second.

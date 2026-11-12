@@ -20,6 +20,7 @@ enum DemoData {
                 windows: [
                     RateWindow(id: "five_hour", usedPercent: 42, windowMinutes: 300, resetsAt: now.addingTimeInterval(2 * 3600 + 15 * 60)),
                     RateWindow(id: "seven_day", usedPercent: 27, windowMinutes: 10080, resetsAt: now.addingTimeInterval(4 * 86400 + 6 * 3600)),
+                    RateWindow(id: "model_scoped:Fable", usedPercent: 12, windowMinutes: 10080, resetsAt: now.addingTimeInterval(4 * 86400 + 6 * 3600), scope: "Fable", observedAt: now.addingTimeInterval(-12 * 60)),
                 ]
             ),
             today: TokenCounts(input: 1_200_000, cacheRead: 48_300_000, cacheWrite: 900_000, output: 286_000),

@@ -9,6 +9,8 @@ import UsageCore
 //   usagebar-bridge status      受け取った最新の値を表示する
 //
 // 通信は一切しない。標準入力から数値だけを取り出し、~/.claude/usagebar/ に書くだけ。
+// モデルごとの週間枠（Fable など）は標準入力に含まれないため、Claude Code が ~/.claude.json に
+// 残した取得結果から、枠の名前と数値だけを読む。
 
 let maxStdinBytes = 4 << 20
 
@@ -276,7 +278,11 @@ func printStatus() {
     print(tr("受信時刻: \(observed)（\(elapsed) 前）", "Received: \(observed) (\(elapsed) ago)"))
     for window in snapshot.rateLimitSnapshot.windows {
         let reset = window.resetsAt.map { tr(" / リセット \($0)", " / resets \($0)") } ?? ""
-        print("\(window.label(in: language)): \(window.usedPercent)%\(reset)")
+        let age = window.observedAt.map {
+            let elapsed = shortDuration(now.timeIntervalSince($0))
+            return tr(" / \(elapsed) 前の値", " / as of \(elapsed) ago")
+        } ?? ""
+        print("\(window.label(in: language)): \(window.usedPercent)%\(reset)\(age)")
     }
 }
 
@@ -289,7 +295,9 @@ case nil:
     let input = readStdin(limit: maxStdinBytes)
     let previous = ClaudeBridgeSnapshot.load(path: UsagePaths.claudeBridgeSnapshot)
     var snapshot = previous
-    if let fresh = ClaudeBridgeSnapshot.fromStatusLineInput(input, now: now) {
+    if var fresh = ClaudeBridgeSnapshot.fromStatusLineInput(input, now: now) {
+        let models = ClaudeUsageCache.loadModelWindows(path: UsagePaths.claudeConfig)
+        fresh.model_scoped = models.isEmpty ? nil : models
         let merged = fresh.merged(onto: previous, now: now)
         snapshot = merged
         if let data = try? merged.encoded(), ensurePrivateDirectory(UsagePaths.claudeBridgeDirectory) {

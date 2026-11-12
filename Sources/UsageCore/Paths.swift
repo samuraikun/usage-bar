@@ -21,6 +21,8 @@ public enum UsagePaths {
     public static var claudeProjects: String { realHome + "/.claude/projects" }
     public static var claudeBridgeDirectory: String { realHome + "/.claude/usagebar" }
     public static var claudeBridgeSnapshot: String { claudeBridgeDirectory + "/claude-rate-limits.json" }
+    /// Claude Code 自身の状態ファイル。中継コマンドだけが、モデルごとの枠を取り出すために読む（アプリは読めない）。
+    public static var claudeConfig: String { realHome + "/.claude.json" }
     public static var claudeSettings: String { realHome + "/.claude/settings.json" }
     public static var codexSessions: String { realHome + "/.codex/sessions" }
     public static var codexArchivedSessions: String { realHome + "/.codex/archived_sessions" }

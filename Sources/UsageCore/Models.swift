@@ -69,12 +69,18 @@ public struct RateWindow: Sendable, Equatable, Identifiable {
     public var usedPercent: Double
     public var windowMinutes: Int?
     public var resetsAt: Date?
+    /// 特定のモデルだけに掛かる枠なら、そのモデルの名前（"Fable" など）。
+    public var scope: String?
+    /// この枠だけ取得時刻が違うときの時刻。nil なら `RateLimitSnapshot.observedAt` と同じ。
+    public var observedAt: Date?
 
-    public init(id: String, usedPercent: Double, windowMinutes: Int?, resetsAt: Date?) {
+    public init(id: String, usedPercent: Double, windowMinutes: Int?, resetsAt: Date?, scope: String? = nil, observedAt: Date? = nil) {
         self.id = id
         self.usedPercent = usedPercent
         self.windowMinutes = windowMinutes
         self.resetsAt = resetsAt
+        self.scope = scope
+        self.observedAt = observedAt
     }
 
     /// リセット時刻を過ぎた枠は、次に CLI を使って新しい値が届くまで 0% とみなす。
@@ -89,6 +95,12 @@ public struct RateWindow: Sendable, Equatable, Identifiable {
 
     /// 枠の名前（「5時間枠」「Weekly」など）。
     public func label(in language: AppLanguage) -> String {
+        let base = baseLabel(in: language)
+        guard let scope, !scope.isEmpty else { return base }
+        return language == .ja ? "\(base)（\(scope)）" : "\(base) (\(scope))"
+    }
+
+    private func baseLabel(in language: AppLanguage) -> String {
         let ja = language == .ja
         switch windowMinutes {
         case 300?: return ja ? "5時間枠" : "5-hour"

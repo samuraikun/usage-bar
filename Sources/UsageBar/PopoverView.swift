@@ -130,10 +130,14 @@ private struct RateWindowRow: View {
     let window: RateWindow
     let now: Date
 
+    private static let staleAfter: TimeInterval = 30 * 60
+
     var body: some View {
         let expired = window.isExpired(at: now)
         let percent = window.currentPercent(at: now)
         let s = Strings(language: language)
+        // モデルごとの枠は Claude Code が取得したときにしか更新されないため、古ければ枠ごとに知らせる。
+        let staleSince = window.observedAt.flatMap { now.timeIntervalSince($0) > Self.staleAfter ? $0 : nil }
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(window.label(in: language)).font(.subheadline)
@@ -150,6 +154,12 @@ private struct RateWindowRow: View {
                                 at: Format.moment(resetsAt, now: now, language: language)))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if let staleSince {
+                Text(s.modelWindowStale(Format.ago(staleSince, now: now, language: language)))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)

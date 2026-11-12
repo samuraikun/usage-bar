@@ -33,6 +33,11 @@ struct Strings {
           "No usage found yet. Use Codex CLI and UsageBar will read it from the logs.")
     }
 
+    func modelWindowStale(_ ago: String) -> String {
+        t("\(ago)の値です。Claude Code で /usage を開くと更新されます。",
+          "As of \(ago). Open /usage in Claude Code to update it.")
+    }
+
     var resetPassed: String { t("リセット済み（次に使ったときに更新）", "Reset (updates on next use)") }
     func resets(_ remaining: String, at moment: String) -> String {
         t("リセット: \(remaining)（\(moment)）", "Resets \(remaining) (\(moment))")
